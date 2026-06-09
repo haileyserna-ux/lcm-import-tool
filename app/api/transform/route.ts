@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { writeFile, mkdir, access } from 'fs/promises'
+import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
-import { exec } from 'child_process'
-import { promisify } from 'util'
-
-const execAsync = promisify(exec)
+import { transform } from '@/lib/transform'
 
 export async function POST(request: NextRequest) {
   let formData: FormData
@@ -38,56 +35,24 @@ export async function POST(request: NextRequest) {
     writeFile(templatePath, Buffer.from(await importTemplate.arrayBuffer())),
   ])
 
-  const scriptPath = join(process.cwd(), 'backend', 'transform.py')
-  const cmd = `python3 "${scriptPath}" "${csvPath}" "${offerPath}" "${templatePath}" "${outputPath}"`
-
-  console.log('[transform] cwd:', process.cwd())
-  console.log('[transform] command:', cmd)
-
-  let stdout: string
-  let stderr: string
+  let stats
   try {
-    const result = await execAsync(cmd)
-    stdout = result.stdout
-    stderr = result.stderr
+    stats = await transform(csvPath, offerPath, templatePath, outputPath)
   } catch (err: unknown) {
-    const e = err as { stdout?: string; stderr?: string; message?: string }
-    console.error('[transform] script threw — stdout:', e.stdout)
-    console.error('[transform] script threw — stderr:', e.stderr)
-    console.error('[transform] script threw — message:', e.message)
-    const detail = e.stderr || e.stdout || e.message || 'Unknown error'
-    return NextResponse.json({ error: `Python script failed:\n${detail}` }, { status: 500 })
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[transform] error:', message)
+    return NextResponse.json({ error: `Transform failed:\n${message}` }, { status: 500 })
   }
 
-  console.log('[transform] stdout:', stdout)
-  console.log('[transform] stderr:', stderr)
-
-  // Confirm the script actually wrote the output file
-  try {
-    await access(outputPath)
-  } catch {
-    return NextResponse.json(
-      { error: `Script exited without writing the output file.\nstdout: ${stdout}\nstderr: ${stderr}` },
-      { status: 500 }
-    )
-  }
-
-  // Parse warnings from stdout if present; tolerate empty or non-JSON stdout
-  let warnings = { unmatchedProducts: [] as string[], unmatchedOffers: [] as string[] }
-  let stats = { productsCount: 0, offersCount: 0 }
-  const trimmed = stdout.trim()
-  if (trimmed) {
-    try {
-      const parsed = JSON.parse(trimmed)
-      if (parsed.warnings) warnings = parsed.warnings
-      if (parsed.stats) stats = parsed.stats
-      // Python script returns flat keys, not nested under "stats"
-      if (parsed.products !== undefined) stats.productsCount = parsed.products
-      if (parsed.offers_matched !== undefined) stats.offersCount = parsed.offers_matched
-    } catch {
-      // stdout wasn't JSON — script still ran fine, no structured warnings available
-    }
-  }
-
-  return NextResponse.json({ sessionId, warnings, stats })
+  return NextResponse.json({
+    sessionId,
+    stats: {
+      productsCount: stats.products,
+      offersCount: stats.offers_matched,
+    },
+    warnings: {
+      unmatchedProducts: stats.unmatched_products,
+      unmatchedOffers: stats.unmatched_offers,
+    },
+  })
 }
