@@ -14,9 +14,20 @@ const SKIP_FIELDS = new Set([
 
 const DEFAULT_TAX = 'P0000000'
 
+function fixEncoding(t: string): string {
+  if (!t) return t
+  try {
+    // Bytes were UTF-8 but read as Latin-1 — re-encode as Latin-1 to recover original bytes, then decode as UTF-8
+    return Buffer.from(t, 'latin1').toString('utf-8')
+  } catch {
+    return t
+  }
+}
+
 function cleanValue(field: string, value: string): string {
   if (!value) return value
-  value = value.replace('Ä¢', '•')
+  value = fixEncoding(value)
+  value = value.replace('\xc4\xa2', '•')
   if (field === 'itemRefundable') value = value.replace(/^itemRefundable_/, '')
   else if (field === 'isBackordered') value = value.replace(/^Is_Backordered_/, '')
   return value
@@ -85,8 +96,8 @@ export async function transform(
     }
   }
 
-  // Load products from CSV
-  const csvWb = XLSX.read(fs.readFileSync(csvPath), { type: 'buffer' })
+  // Load products from CSV (codepage 65001 = UTF-8)
+  const csvWb = XLSX.read(fs.readFileSync(csvPath), { type: 'buffer', codepage: 65001 })
   const csvWs = csvWb.Sheets[csvWb.SheetNames[0]]
   const exportRows = XLSX.utils.sheet_to_json(csvWs) as Record<string, string>[]
 
