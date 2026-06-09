@@ -75,7 +75,7 @@ export async function transform(
   outputPath: string
 ): Promise<TransformResult> {
   // Load offers from xlsx
-  const offerWb = XLSX.readFile(offerPath)
+  const offerWb = XLSX.read(fs.readFileSync(offerPath), { type: 'buffer' })
   const offerWs = offerWb.Sheets[offerWb.SheetNames[0]]
   const offerRows = XLSX.utils.sheet_to_json(offerWs) as Record<string, unknown>[]
   const offers: Record<string, Record<string, unknown>> = {}
@@ -86,12 +86,12 @@ export async function transform(
   }
 
   // Load products from CSV
-  const csvWb = XLSX.readFile(csvPath)
+  const csvWb = XLSX.read(fs.readFileSync(csvPath), { type: 'buffer' })
   const csvWs = csvWb.Sheets[csvWb.SheetNames[0]]
   const exportRows = XLSX.utils.sheet_to_json(csvWs) as Record<string, string>[]
 
   // Get field→column mapping from template row 2 (index 1)
-  const templateWb = XLSX.readFile(templatePath)
+  const templateWb = XLSX.read(fs.readFileSync(templatePath), { type: 'buffer' })
   const templateWs = templateWb.Sheets['Data']
   const templateArr = XLSX.utils.sheet_to_json(templateWs, { header: 1 }) as unknown[][]
   const headerRow = (templateArr[1] || []) as unknown[]
